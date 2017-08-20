@@ -1,0 +1,32 @@
+{
+  "name": "yasblo",
+  "version": "0.0.0",
+  "description": "yasblo : yet another static blog tool (yep, not really an acronym): ie barebones blogging with markdown & es6",
+  "main": "index.js",
+  "bin": {
+    "yasblo": "index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mark 'kaosat-dev' Moissette",
+  "license": "MIT",
+  "dependencies": {
+    "front-matter": "^2.1.2",
+    "js-yaml": "^3.9.1",
+    "markdown-it": "^8.3.2",
+    "markdown-it-checkbox": "^1.1.0",
+    "markdown-it-footnote": "^3.0.1",
+    "markdown-it-front-matter": "^0.1.2",
+    "markdown-it-highlightjs": "^3.0.0",
+    "markdown-it-html5-embed": "^0.3.2",
+    "markdown-it-mermaid": "^0.1.8",
+    "markdown-it-meta": "0.0.1",
+    "markdown-it-prism": "^1.1.1",
+    "markdown-it-table-of-contents": "^0.3.2",
+    "markdown-it-video": "^0.4.0",
+    "remove-markdown": "^0.2.2",
+    "sanitize-filename": "^1.6.1",
+    "yaml": "^0.3.0"
+  }
+}
