@@ -34,8 +34,6 @@ md.use(require('markdown-it-footnote'))
   .use(require('markdown-it-prism'), { plugins: ['line-numbers', 'show-invisibles'] })
   .use(require('markdown-it-front-matter'), function (fm) { // used for extracting metadata
     const res = require('js-yaml').safeLoad(fm)
-    // console.log(fm)
-    // console.log('front matter: ', res)
     currentArticleMetaData = res
   })
 // mdi.use(markdownItMermaid)
@@ -44,7 +42,11 @@ const path = require('path')
 const yaml = require('js-yaml')
 const config = yaml.safeLoad(fs.readFileSync('./config.yml'))
 
-const {siteEntries, siteUrl, siteTitle, siteDescription} = config
+const {siteEntries, siteUrl, siteTitle, siteDescription, articleFooterFields} = config
+
+const sourceDir = './source'
+const articlesDir = path.join(sourceDir, 'articles')
+const imagesDir = path.join(sourceDir, 'images')
 
 function generateArticleExcerpt (rawMd, parsedMd, metadata) {
   const content = require('remove-markdown')(
@@ -53,16 +55,23 @@ function generateArticleExcerpt (rawMd, parsedMd, metadata) {
     .replace(/\@\[TOC]/g, ''))
 
   const {title, siteUrl, articleUrl, featuredImg} = metadata
-  const fieldNames = ['authors', 'date', 'mainTag', 'comments', 'link']
-  const icons = {}
+  const fieldNames = articleFooterFields
 
-  const fields = fieldNames
+  const icons = fs.readdirSync(imagesDir)
+    .filter(x => x.endsWith('.svg'))
+    .reduce(function (icons, iconFileName) {
+      icons[path.basename(iconFileName, '.svg')] = fs.readFileSync(path.join(imagesDir, iconFileName), 'utf8')
+      return icons
+    }, {})
+
+  const footerFields = fieldNames
     .filter(f => metadata[f] !== undefined && metadata[f] !== '')
     .map(f => {
       const isComments = f === 'comments'
       const extras = isComments && metadata[f].length === 0 ? 'no comments' : ''
+      const icon = icons[f] ? icons[f] : ''
       return `<li>
-      <span class='icon'>${icons[f]}</span>
+      <span class='icon'>${icon}</span>
       <a href='${siteUrl}/${f}/${metadata[f]}}'>${metadata[f]} ${extras}</a>
     </li>`
     })
@@ -90,7 +99,7 @@ function generateArticleExcerpt (rawMd, parsedMd, metadata) {
       </div>
       <footer>
         <ul>
-          ${fields}
+          ${footerFields}
         </ul>
       </footer>
     </article>
@@ -104,7 +113,6 @@ function generateArticle (content, metadata) {
 }
 
 function generatePagesFromArticles () {
-  const articlesDir = './source/articles'
   const dirContents = fs.readdirSync(articlesDir)// .filter(x => x.endsWith('.md'))
     .map(f => path.resolve(articlesDir, f))
     .map(function (fullPath) {
