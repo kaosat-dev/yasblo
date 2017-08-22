@@ -10,6 +10,54 @@ const md = mdIt({
 
 let currentArticleMetaData
 
+md.core.ruler.push('header-extract', function (state, silent) {
+  let heading = false
+  let introFound = false
+
+  state.md.image = undefined
+  state.md.title = undefined
+  state.md.intro = undefined
+
+  for (var i = 0, l = state.tokens.length; i < l; i++) {
+    var token = state.tokens[i]
+    // console.log('token',token)
+
+    if (token.level === 1 && token.type === 'inline' && heading) {
+      // console.log('title', token.content)
+      state.md.title = token.content
+      if (state.md.options.stripTitles) {
+        token.content = ''
+        token.children[0].content = ''
+      }
+    }
+
+    if (token.type === 'inline' && token.content !== '@[TOC]' && !heading && introFound === false && token.children[0].type !== 'image' && token.level < 2) {
+      /* token.children.forEach(function( child){
+        child.type === 'toc_body' && child.type === 'toc_open' && child.type === 'toc_close'
+      }) */
+      // console.log('intro:', token, introFound)
+      // console.log('intro:', token.content, introFound)
+      introFound = true
+      state.md.intro = token.content
+    }
+
+    if (token.type === 'heading_open' && token.tag === 'h1') {
+      // console.log('heading_open', token)
+      heading = true
+    }
+    if (token.type === 'heading_close' && heading) {
+      // console.log('heading_open', token)
+      heading = false
+    }
+    if (token.type === 'inline' && token.children && token.children[0] && token.children[0].type === 'image') {
+      const image = token.children[0].attrs[0][1]
+      // console.log('image', image)// .attrs.src)
+      state.md.image = image
+    }
+  }
+  return false
+})
+
 md.use(require('markdown-it-footnote'))
   .use(require('markdown-it-checkbox'), {
     divWrap: true,
@@ -37,24 +85,20 @@ md.use(require('markdown-it-footnote'))
     currentArticleMetaData = res
   })
 // mdi.use(markdownItMermaid)
+//
 const path = require('path')
 
 const yaml = require('js-yaml')
 const config = yaml.safeLoad(fs.readFileSync('./config.yml'))
 
-const {siteEntries, siteUrl, siteTitle, siteDescription, articleFooterFields} = config
+const {author, keywords, siteUrl, siteTitle, siteDescription, articleFooterFields, siteEntries} = config
 
 const sourceDir = './source'
 const articlesDir = path.join(sourceDir, 'articles')
 const imagesDir = path.join(sourceDir, 'images')
+const outputDir = path.resolve('.', 'output')
 
-function generateArticleExcerpt (rawMd, parsedMd, metadata) {
-  const content = require('remove-markdown')(
-  require('front-matter')(rawMd).body
-    .replace(/#/g, '')
-    .replace(/\@\[TOC]/g, ''))
-
-  const {title, siteUrl, articleUrl, featuredImg} = metadata
+function generateFooter (metadata) {
   const fieldNames = articleFooterFields
 
   const icons = fs.readdirSync(imagesDir)
@@ -77,6 +121,21 @@ function generateArticleExcerpt (rawMd, parsedMd, metadata) {
     })
     .reduce((acc, cur) => acc + cur)
 
+  return `<footer>
+    <ul>
+      ${footerFields}
+    </ul>
+  </footer>`
+}
+
+function generateArticleExcerpt (mdNoTitle, metadata, footer) {
+  const content = require('remove-markdown')(
+  require('front-matter')(mdNoTitle).body
+    .replace(/#/g, '')
+    .replace(/@\[TOC]/g, ''))
+
+  const {title, intro, siteUrl, articleUrl, featuredImg} = metadata
+
   const featuredImage = featuredImg ? `
     <figure class='post-featured-image'>
       <a href='${articleUrl}' title='${title}'>
@@ -85,7 +144,7 @@ function generateArticleExcerpt (rawMd, parsedMd, metadata) {
     </figure>
   ` : ''
   return `
-    <article id='post-' class='post-excerpt'>
+    <article id='post-' class='post post-excerpt'>
       <header class='entry-header'>
         <h1 class='entry-title'>
           <a href='${articleUrl}' title='${title}'>${title}</a>
@@ -95,24 +154,40 @@ function generateArticleExcerpt (rawMd, parsedMd, metadata) {
       ${featuredImage}
 
       <div class='entry-content clearfix'>
-        <p>${content.substring(0, 150)}...</p>
+        <p>${intro.substring(0, 150)}...</p>
       </div>
-      <footer>
-        <ul>
-          ${footerFields}
-        </ul>
-      </footer>
+      ${footer}
     </article>
   `
 }
 
-function generateArticle (content, metadata) {
-  return `<div class="markdown-body content">
-    ${content}
-  </div>`
+function generateArticle (siteTop, markup, metadata, footer) {
+  return `<!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${siteTitle} | ${siteDescription}</title>
+        <meta name="description" content="${siteDescription}">
+        <meta name="keywords" content="${keywords}">
+        <meta name="author" content="${author}">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <link rel="stylesheet" href="index.css">
+        <link rel="stylesheet" href="node_modules/prismjs/themes/prism.css">
+      </head>
+      <body>
+        <div class='container'>
+          ${siteTop}
+          <article class="post markdown-body content">
+            ${markup}
+            ${footer}
+          </article>
+        </div>
+      </body>
+    </html>`
 }
 
-function generatePagesFromArticles () {
+function generatePagesFromArticles (siteTop) {
   const dirContents = fs.readdirSync(articlesDir)// .filter(x => x.endsWith('.md'))
     .map(f => path.resolve(articlesDir, f))
     .map(function (fullPath) {
@@ -121,19 +196,32 @@ function generatePagesFromArticles () {
 
       if (isArticle) {
         const rawMd = fs.readFileSync(fullPath, 'utf8')
-        const parsedMd = md.render(rawMd)
+
+        md.options.stripTitles = true
+        const mdNoTitle = md.render(rawMd)
+        md.options.stripTitles = false
+        const mdFull = md.render(rawMd)
+        // console.log('after render', md.title)
 
         const metaDefaults = {
+          title: '',
+          intro: '',
           author: '',
           mainTag: undefined,
           comments: [],
           link: '',
           siteUrl,
           filePath: path.basename(fullPath, '.md'),
-          articleUrl: siteUrl + '/articles/' + path.basename(fullPath, '.md') + '.html'
+          articleUrl: './' + path.basename(fullPath, '.md') + '.html'// siteUrl + '/articles/' + path.basename(fullPath, '.md') + '.html'
         }
-        const metadata = Object.assign({}, metaDefaults, currentArticleMetaData)
-        return generateArticleExcerpt(rawMd, parsedMd, metadata)
+        const metadata = Object.assign({}, metaDefaults, currentArticleMetaData, {tile: md.title, featuredImg: md.image, intro: md.intro})
+
+        const footer = generateFooter(metadata)
+        const excerpt = generateArticleExcerpt(mdNoTitle, metadata, footer)
+        const article = generateArticle(siteTop, mdFull, metadata, footer)
+        fs.writeFileSync(path.join(outputDir, path.basename(fullPath, '.md') + '.html'), article)
+
+        return excerpt
       }
     })
     .reduce((acc, cur) => acc + cur)// for comma removal
@@ -142,10 +230,10 @@ function generatePagesFromArticles () {
 
 // generatePagesFromArticles()
 
-function buildHtml (header = '', body = '') {
-  body = generatePagesFromArticles()
+function buildSite (header = '', body = '') {
+  console.log('siteEntries', siteEntries)
   const siteLinks = siteEntries
-    .map(x => `<li><a href="#">${x}</a></li>`)
+    .map(x => `<li><a href="${siteUrl}/${x}.html">${x}</a></li>`)
     .reduce((acc, cur) => acc + cur)
 
   const siteTop = `<section class='header'>
@@ -164,9 +252,18 @@ function buildHtml (header = '', body = '') {
     </nav>
   </section>`
 
+  body = generatePagesFromArticles(siteTop)
+
   return `<!DOCTYPE html>
     <html>
       <head>
+        <meta charset="UTF-8">
+        <title>${siteTitle} | ${siteDescription}</title>
+        <meta name="description" content="${siteDescription}">
+        <meta name="keywords" content="${keywords}">
+        <meta name="author" content="${author}">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
         <link rel="stylesheet" href="index.css">
         <link rel="stylesheet" href="node_modules/prismjs/themes/prism.css">
       </head>
@@ -181,6 +278,13 @@ function buildHtml (header = '', body = '') {
     </html>`
 }
 
-const html = buildHtml('')
-const outpath = 'index.html'
+console.log('generating site')
+
+const html = buildSite('')
+
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir)
+}
+const outpath = path.join(outputDir, 'index.html')
 fs.writeFileSync(outpath, html)
+console.log('generation done')
